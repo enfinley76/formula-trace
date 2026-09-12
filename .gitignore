@@ -1,0 +1,4 @@
+/formula-trace
+*.exe
+*.test
+*.out

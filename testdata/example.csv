@@ -1,0 +1,9 @@
+cell,formula
+A1,10
+A2,20
+A3,5
+B1,=A1+A2
+B2,=B1*2
+B3,=B2-A3
+C1,=B2+A1
+C2,=C1/A3
