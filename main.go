@@ -16,9 +16,11 @@ import (
 )
 
 // cellRefPattern matches a single cell reference or a range of two, with
-// optional $ anchors (A1, $A$1, B2:B9). Sheet-qualified refs are not
-// supported yet.
-var cellRefPattern = regexp.MustCompile(`\$?[A-Za-z]{1,3}\$?[0-9]+(?::\$?[A-Za-z]{1,3}\$?[0-9]+)?`)
+// optional $ anchors (A1, $A$1, B2:B9) and an optional leading sheet
+// qualifier (Sheet2!A1, 'My Sheet'!A1:B2). The sheet qualifier, when
+// present, only needs to appear before the first cell of a range - Excel
+// doesn't allow "Sheet1!A1:Sheet2!B2".
+var cellRefPattern = regexp.MustCompile(`(?:(?:'[^']+'|[A-Za-z_][A-Za-z0-9_.]*)!)?\$?[A-Za-z]{1,3}\$?[0-9]+(?::\$?[A-Za-z]{1,3}\$?[0-9]+)?`)
 
 // Grid holds every cell's raw formula text (empty for literals) and its
 // resolved, deduplicated list of direct dependencies.
@@ -27,8 +29,24 @@ type Grid struct {
 	deps     map[string][]string
 }
 
+// splitSheetPrefix separates a "Sheet1!A1" or "'My Sheet'!A1" style
+// reference into its sheet name (quotes stripped) and the bare cell part.
+// A reference with no "!" has no sheet and returns an empty sheet name.
+func splitSheetPrefix(s string) (sheet, rest string) {
+	i := strings.LastIndex(s, "!")
+	if i == -1 {
+		return "", s
+	}
+	return strings.Trim(s[:i], "'"), s[i+1:]
+}
+
 func normalizeCell(s string) string {
-	return strings.ToUpper(strings.ReplaceAll(s, "$", ""))
+	sheet, cell := splitSheetPrefix(strings.TrimSpace(s))
+	cell = strings.ToUpper(strings.ReplaceAll(cell, "$", ""))
+	if sheet == "" {
+		return cell
+	}
+	return sheet + "!" + cell
 }
 
 // splitCell separates a normalized reference like "AB12" into its column
@@ -94,30 +112,38 @@ func expandRange(from, to string) ([]string, error) {
 }
 
 // extractRefs pulls every cell reference out of a formula, expanding ranges
-// and deduplicating while preserving first-seen order.
+// and deduplicating while preserving first-seen order. A sheet qualifier on
+// a range applies to every cell the range expands to.
 func extractRefs(formula string) []string {
 	matches := cellRefPattern.FindAllString(formula, -1)
 	seen := make(map[string]bool)
 	var out []string
 	add := func(cell string) {
-		cell = normalizeCell(cell)
 		if !seen[cell] {
 			seen[cell] = true
 			out = append(out, cell)
 		}
 	}
 	for _, m := range matches {
-		if strings.Contains(m, ":") {
-			parts := strings.SplitN(m, ":", 2)
-			cells, err := expandRange(normalizeCell(parts[0]), normalizeCell(parts[1]))
+		sheet, rest := splitSheetPrefix(m)
+		rest = strings.ToUpper(strings.ReplaceAll(rest, "$", ""))
+		if strings.Contains(rest, ":") {
+			parts := strings.SplitN(rest, ":", 2)
+			cells, err := expandRange(parts[0], parts[1])
 			if err != nil {
 				continue
 			}
 			for _, c := range cells {
+				if sheet != "" {
+					c = sheet + "!" + c
+				}
 				add(c)
 			}
 		} else {
-			add(m)
+			if sheet != "" {
+				rest = sheet + "!" + rest
+			}
+			add(rest)
 		}
 	}
 	return out
@@ -267,8 +293,11 @@ func main() {
 		if cell == target {
 			continue
 		}
-		formula := g.formulas[cell]
-		if formula == "" {
+		formula, ok := g.formulas[cell]
+		switch {
+		case !ok:
+			formula = "(not in sheet)"
+		case formula == "":
 			formula = "(literal)"
 		}
 		fmt.Printf("%s\t%s\n", cell, formula)

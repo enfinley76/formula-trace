@@ -71,6 +71,27 @@ $ formula-trace testdata/circular.csv A1
 error: circular reference: A1 -> B1 -> A1
 ```
 
+## Multiple sheets
+
+There's no separate "sheet" column. If your export covers more than one
+sheet, prefix the cell in the `cell` column with the sheet name, the same
+way a formula would reference it: `Sheet2!A1`. Formulas can reference other
+sheets the same way, including ranges (`SUM(Sheet1!A1:A2)`); the sheet
+qualifier only needs to appear once, before the first cell of a range.
+
+```csv
+cell,formula
+Sheet1!A1,10
+Sheet1!A2,20
+Sheet1!B1,=Sheet1!A1+Sheet1!A2
+Sheet2!A1,=Sheet1!B1*2
+```
+
+If a formula references a cell that isn't in the CSV at all - commonly
+because the sheet it lives on wasn't included in the export - it still
+shows up in the trace, labeled `(not in sheet)` rather than `(literal)`, so
+you know the chain is incomplete rather than assuming it ends there.
+
 ## Building
 
 Standard library only, no dependencies.
@@ -81,7 +102,8 @@ go build -o formula-trace .
 
 ## Known limitations
 
-- Single sheet only; no `Sheet2!A1` style references yet.
 - No named ranges, no `INDIRECT`, no functions are evaluated — this traces
   references, not values.
 - Columns beyond `ZZZ` haven't been tested.
+- Sheet names with an apostrophe in them can't be quoted correctly, since
+  the parser looks for a plain `'...'` wrapper.

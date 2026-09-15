@@ -1,0 +1,7 @@
+cell,formula
+Sheet1!A1,10
+Sheet1!A2,20
+Sheet1!B1,=Sheet1!A1+Sheet1!A2
+Sheet2!A1,=Sheet1!B1*2
+Sheet2!A2,=SUM(Sheet1!A1:A2)
+Sheet2!B1,=Sheet2!A1+Sheet2!A2
